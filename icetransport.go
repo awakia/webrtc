@@ -25,6 +25,8 @@ type ICETransport struct {
 	onConnectionStateChangeHdlr       func(ICETransportState)
 	onSelectedCandidatePairChangeHdlr func(*ICECandidatePair)
 
+	state ICETransportState
+
 	gatherer *ICEGatherer
 	conn     *ice.Conn
 	mux      *mux.Mux
@@ -62,6 +64,7 @@ func (api *API) NewICETransport(gatherer *ICEGatherer) *ICETransport {
 		gatherer: gatherer,
 		api:      api,
 		log:      api.settingEngine.LoggerFactory.NewLogger("ortc"),
+		state:    ICETransportStateNew,
 	}
 }
 
@@ -80,7 +83,12 @@ func (t *ICETransport) Start(gatherer *ICEGatherer, params ICEParameters, role *
 
 	agent := t.gatherer.agent
 	if err := agent.OnConnectionStateChange(func(iceState ice.ConnectionState) {
-		t.onConnectionStateChange(newICETransportStateFromICE(iceState))
+		state := newICETransportStateFromICE(iceState)
+		t.lock.Lock()
+		t.state = state
+		t.lock.Unlock()
+
+		t.onConnectionStateChange(state)
 	}); err != nil {
 		return err
 	}
@@ -142,17 +150,24 @@ func (t *ICETransport) Start(gatherer *ICEGatherer, params ICEParameters, role *
 
 // Stop irreversibly stops the ICETransport.
 func (t *ICETransport) Stop() error {
-	// Close the Mux. This closes the Mux and the underlying ICE conn.
 	t.lock.Lock()
 	defer t.lock.Unlock()
 
+	var err error
 	if t.mux != nil {
-		return t.mux.Close()
+		err = t.mux.Close()
 	} else if t.gatherer != nil {
-		return t.gatherer.Close()
+		err = t.gatherer.Close()
 	}
 
-	return nil
+	if t.state != ICETransportStateClosed {
+		if t.state != ICETransportStateNew {
+			t.log.Warnf("unexpected state after stopping ice transport: %s, expected %s or %s", t.state, ICETransportStateNew, ICETransportStateClosed)
+		}
+		t.state = ICETransportStateClosed
+	}
+
+	return err
 }
 
 // OnSelectedCandidatePairChange sets a handler that is invoked when a new
@@ -239,6 +254,20 @@ func (t *ICETransport) AddRemoteCandidate(remoteCandidate ICECandidate) error {
 	}
 
 	return nil
+}
+
+// State returns the current ice transport state.
+func (t *ICETransport) State() ICETransportState {
+	t.lock.RLock()
+	defer t.lock.RUnlock()
+	return t.state
+}
+
+// NewEndpoint registers a new endpoint on the underlying mux.
+func (t *ICETransport) NewEndpoint(f mux.MatchFunc) *mux.Endpoint {
+	t.lock.Lock()
+	defer t.lock.Unlock()
+	return t.mux.NewEndpoint(f)
 }
 
 func (t *ICETransport) ensureGatherer() error {
