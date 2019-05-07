@@ -19,6 +19,8 @@
 </p>
 <br>
 
+[![Stargazers over time](https://starchart.cc/pion/webrtc.svg)](https://starchart.cc/pion/webrtc)
+
 See [DESIGN.md](DESIGN.md) for an overview of features and future goals.
 
 ### Breaking Changes
