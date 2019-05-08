@@ -890,10 +890,6 @@ func (pc *PeerConnection) LocalDescription() *SessionDescription {
 
 // SetRemoteDescription sets the SessionDescription of the remote peer
 func (pc *PeerConnection) SetRemoteDescription(desc SessionDescription) error {
-	// FIXME: Remove this when renegotiation is supported
-	if pc.currentRemoteDescription != nil {
-		return fmt.Errorf("remoteDescription is already defined, SetRemoteDescription can only be called once")
-	}
 	if pc.isClosed {
 		return &rtcerr.InvalidStateError{Err: ErrConnectionClosed}
 	}
